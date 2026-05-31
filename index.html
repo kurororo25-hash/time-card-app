@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="退勤記録">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>退勤記録</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111; background: #f6f6f6; }
+    body { margin: 0; padding: env(safe-area-inset-top) 16px 32px; }
+    .app { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 28px; margin: 24px 0 4px; }
+    .sub { color: #666; margin: 0 0 18px; font-size: 14px; }
+    button { border: 0; border-radius: 14px; padding: 14px 16px; font-size: 17px; font-weight: 700; }
+    .main { width: 100%; background: #111; color: white; font-size: 20px; padding: 18px; margin: 8px 0 16px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .nav { background: white; color: #111; flex: 1; border: 1px solid #ddd; }
+    .month { text-align: center; font-weight: 700; flex: 2; }
+    .card { background: white; border-radius: 18px; padding: 12px; margin-top: 14px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
+    .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 6px; border-bottom: 1px solid #eee; }
+    .item:last-child { border-bottom: 0; }
+    .date { font-weight: 700; }
+    .time { font-size: 22px; font-weight: 800; }
+    .small { color: #666; font-size: 13px; }
+    .danger { background: #fff1f1; color: #b00020; border: 1px solid #ffd0d0; }
+    .muted { color: #777; text-align: center; padding: 24px 0; }
+    dialog { width: min(92vw, 420px); border: 0; border-radius: 20px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+    dialog::backdrop { background: rgba(0,0,0,.35); }
+    input { width: 100%; box-sizing: border-box; padding: 14px; font-size: 18px; border-radius: 12px; border: 1px solid #ccc; margin: 8px 0 14px; }
+    .save { background: #111; color: white; flex: 1; }
+    .cancel { background: #eee; color: #111; flex: 1; }
+    .delete { background: #fff1f1; color: #b00020; width: 100%; margin-top: 8px; }
+    .footer { margin-top: 18px; display: flex; gap: 8px; }
+    .export { background: white; border: 1px solid #ddd; flex: 1; }
+    textarea { width:100%; height:160px; box-sizing:border-box; border-radius:12px; border:1px solid #ccc; padding:10px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>退勤記録</h1>
+    <p class="sub">退勤時間だけワンタップで保存。記録をタップすると編集できます。</p>
+
+    <button class="main" id="recordBtn">退勤時間を記録</button>
+
+    <div class="row">
+      <button class="nav" id="prevBtn">← 前月</button>
+      <div class="month" id="monthLabel"></div>
+      <button class="nav" id="nextBtn">翌月 →</button>
+    </div>
+
+    <section class="card" id="list"></section>
+
+    <div class="footer">
+      <button class="export" id="copyBtn">今月分をコピー</button>
+      <button class="danger" id="clearMonthBtn">今月分を削除</button>
+    </div>
+  </main>
+
+  <dialog id="editDialog">
+    <h2 style="margin:0 0 10px">退勤時間を編集</h2>
+    <label class="small">日付</label>
+    <input type="date" id="editDate">
+    <label class="small">時刻</label>
+    <input type="time" id="editTime" step="60">
+    <div class="row">
+      <button class="cancel" id="cancelEdit">キャンセル</button>
+      <button class="save" id="saveEdit">保存</button>
+    </div>
+    <button class="delete" id="deleteEdit">この記録を削除</button>
+  </dialog>
+
+  <dialog id="copyDialog">
+    <h2 style="margin:0 0 10px">今月分</h2>
+    <p class="small">コピーできない時は、下の文字を長押ししてコピーしてください。</p>
+    <textarea id="copyText" readonly></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="cancel" id="closeCopy">閉じる</button>
+      <button class="save" id="doCopy">コピー</button>
+    </div>
+  </dialog>
+
+<script>
+const STORAGE_KEY = "taikin_records_v1";
+let records = load();
+let currentMonth = new Date();
+currentMonth.setDate(1);
+let editingId = null;
+
+const $ = id => document.getElementById(id);
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+  catch { return []; }
+}
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+function pad(n){ return String(n).padStart(2,"0"); }
+function toLocalInputParts(iso) {
+  const d = new Date(iso);
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  };
+}
+function dateLabel(iso) {
+  const d = new Date(iso);
+  const week = "日月火水木金土"[d.getDay()];
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}(${week})`;
+}
+function timeLabel(iso) {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function sameMonth(iso, base) {
+  const d = new Date(iso);
+  return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth();
+}
+function monthTitle(d) {
+  return `${d.getFullYear()}年${d.getMonth()+1}月`;
+}
+function render() {
+  $("monthLabel").textContent = monthTitle(currentMonth);
+  const monthRecords = records
+    .filter(r => sameMonth(r.time, currentMonth))
+    .sort((a,b) => new Date(b.time) - new Date(a.time));
+
+  const list = $("list");
+  if (monthRecords.length === 0) {
+    list.innerHTML = `<div class="muted">この月の記録はありません</div>`;
+    return;
+  }
+
+  list.innerHTML = monthRecords.map(r => `
+    <div class="item" data-id="${r.id}">
+      <div>
+        <div class="date">${dateLabel(r.time)}</div>
+        <div class="small">タップで編集</div>
+      </div>
+      <div class="time">${timeLabel(r.time)}</div>
+    </div>
+  `).join("");
+
+  document.querySelectorAll(".item").forEach(el => {
+    el.addEventListener("click", () => openEdit(el.dataset.id));
+  });
+}
+function recordNow() {
+  records.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), time: new Date().toISOString() });
+  save();
+  currentMonth = new Date();
+  currentMonth.setDate(1);
+  render();
+}
+function openEdit(id) {
+  editingId = id;
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  const p = toLocalInputParts(r.time);
+  $("editDate").value = p.date;
+  $("editTime").value = p.time;
+  $("editDialog").showModal();
+}
+function saveEdit() {
+  const date = $("editDate").value;
+  const time = $("editTime").value;
+  if (!date || !time || !editingId) return;
+  const local = new Date(`${date}T${time}:00`);
+  const r = records.find(x => x.id === editingId);
+  if (r) r.time = local.toISOString();
+  save();
+  currentMonth = new Date(local);
+  currentMonth.setDate(1);
+  $("editDialog").close();
+  render();
+}
+function deleteEdit() {
+  if (!editingId) return;
+  if (!confirm("この記録を削除しますか？")) return;
+  records = records.filter(x => x.id !== editingId);
+  save();
+  $("editDialog").close();
+  render();
+}
+function clearMonth() {
+  const count = records.filter(r => sameMonth(r.time, currentMonth)).length;
+  if (count === 0) return;
+  if (!confirm(`${monthTitle(currentMonth)}の記録 ${count}件を削除しますか？`)) return;
+  records = records.filter(r => !sameMonth(r.time, currentMonth));
+  save();
+  render();
+}
+function monthText() {
+  const monthRecords = records
+    .filter(r => sameMonth(r.time, currentMonth))
+    .sort((a,b) => new Date(a.time) - new Date(b.time));
+  if (monthRecords.length === 0) return `${monthTitle(currentMonth)}\n記録なし`;
+  return `${monthTitle(currentMonth)}\n` + monthRecords.map(r => `${dateLabel(r.time)} ${timeLabel(r.time)}`).join("\n");
+}
+function openCopy() {
+  $("copyText").value = monthText();
+  $("copyDialog").showModal();
+}
+async function doCopy() {
+  const text = $("copyText").value;
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("コピーしました");
+  } catch {
+    $("copyText").select();
+    document.execCommand("copy");
+    alert("コピーしました。失敗した場合は長押しでコピーしてください。");
+  }
+}
+
+$("recordBtn").addEventListener("click", recordNow);
+$("prevBtn").addEventListener("click", () => { currentMonth.setMonth(currentMonth.getMonth()-1); render(); });
+$("nextBtn").addEventListener("click", () => { currentMonth.setMonth(currentMonth.getMonth()+1); render(); });
+$("cancelEdit").addEventListener("click", () => $("editDialog").close());
+$("saveEdit").addEventListener("click", saveEdit);
+$("deleteEdit").addEventListener("click", deleteEdit);
+$("clearMonthBtn").addEventListener("click", clearMonth);
+$("copyBtn").addEventListener("click", openCopy);
+$("closeCopy").addEventListener("click", () => $("copyDialog").close());
+$("doCopy").addEventListener("click", doCopy);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+}
+render();
+</script>
+</body>
+</html>
