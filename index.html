@@ -14,35 +14,40 @@
     body { margin: 0; padding: env(safe-area-inset-top) 16px 32px; }
     .app { max-width: 560px; margin: 0 auto; }
     h1 { font-size: 28px; margin: 24px 0 4px; }
-    .sub { color: #666; margin: 0 0 18px; font-size: 14px; }
-    button { border: 0; border-radius: 14px; padding: 14px 16px; font-size: 17px; font-weight: 700; }
+    .sub { color: #666; margin: 0 0 18px; font-size: 14px; line-height: 1.5; }
+    button { border: 0; border-radius: 14px; padding: 14px 16px; font-size: 17px; font-weight: 700; touch-action: manipulation; }
     .main { width: 100%; background: #111; color: white; font-size: 20px; padding: 18px; margin: 8px 0 16px; }
     .row { display: flex; gap: 8px; align-items: center; }
     .nav { background: white; color: #111; flex: 1; border: 1px solid #ddd; }
     .month { text-align: center; font-weight: 700; flex: 2; }
     .card { background: white; border-radius: 18px; padding: 12px; margin-top: 14px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
-    .item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 6px; border-bottom: 1px solid #eee; }
+    .item { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid #eee; }
     .item:last-child { border-bottom: 0; }
+    .editArea { min-width: 0; padding: 8px 4px; border-radius: 12px; }
+    .editArea:active { background: #f2f2f2; }
     .date { font-weight: 700; }
-    .time { font-size: 22px; font-weight: 800; }
+    .time { font-size: 22px; font-weight: 800; white-space: nowrap; }
     .small { color: #666; font-size: 13px; }
     .danger { background: #fff1f1; color: #b00020; border: 1px solid #ffd0d0; }
+    .deleteOne { background: #fff1f1; color: #b00020; border: 1px solid #ffd0d0; padding: 10px 12px; font-size: 14px; border-radius: 12px; }
     .muted { color: #777; text-align: center; padding: 24px 0; }
     dialog { width: min(92vw, 420px); border: 0; border-radius: 20px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
     dialog::backdrop { background: rgba(0,0,0,.35); }
     input { width: 100%; box-sizing: border-box; padding: 14px; font-size: 18px; border-radius: 12px; border: 1px solid #ccc; margin: 8px 0 14px; }
     .save { background: #111; color: white; flex: 1; }
     .cancel { background: #eee; color: #111; flex: 1; }
-    .delete { background: #fff1f1; color: #b00020; width: 100%; margin-top: 8px; }
+    .delete { background: #fff1f1; color: #b00020; width: 100%; margin-top: 8px; border: 1px solid #ffd0d0; }
     .footer { margin-top: 18px; display: flex; gap: 8px; }
     .export { background: white; border: 1px solid #ddd; flex: 1; }
     textarea { width:100%; height:160px; box-sizing:border-box; border-radius:12px; border:1px solid #ccc; padding:10px; font-size:13px; }
+    .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: #111; color: #fff; padding: 10px 14px; border-radius: 999px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .toast.show { opacity: 1; }
   </style>
 </head>
 <body>
   <main class="app">
     <h1>退勤記録</h1>
-    <p class="sub">退勤時間だけワンタップで保存。記録をタップすると編集できます。</p>
+    <p class="sub">退勤時間だけワンタップで保存。記録の日時部分をタップすると編集、右の削除で1件ずつ消せます。</p>
 
     <button class="main" id="recordBtn">退勤時間を記録</button>
 
@@ -83,12 +88,15 @@
     </div>
   </dialog>
 
+  <div class="toast" id="toast">削除しました</div>
+
 <script>
 const STORAGE_KEY = "taikin_records_v1";
 let records = load();
 let currentMonth = new Date();
 currentMonth.setDate(1);
 let editingId = null;
+let toastTimer = null;
 
 const $ = id => document.getElementById(id);
 
@@ -100,6 +108,16 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 function pad(n){ return String(n).padStart(2,"0"); }
+function showToast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1300);
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[s]));
+}
 function toLocalInputParts(iso) {
   const d = new Date(iso);
   return {
@@ -136,17 +154,26 @@ function render() {
   }
 
   list.innerHTML = monthRecords.map(r => `
-    <div class="item" data-id="${r.id}">
-      <div>
+    <div class="item" data-id="${escapeHtml(r.id)}">
+      <div class="editArea" data-action="edit" data-id="${escapeHtml(r.id)}">
         <div class="date">${dateLabel(r.time)}</div>
-        <div class="small">タップで編集</div>
+        <div class="small">日時をタップで編集</div>
       </div>
       <div class="time">${timeLabel(r.time)}</div>
+      <button class="deleteOne" data-action="delete" data-id="${escapeHtml(r.id)}">削除</button>
     </div>
   `).join("");
 
-  document.querySelectorAll(".item").forEach(el => {
+  list.querySelectorAll("[data-action='edit']").forEach(el => {
     el.addEventListener("click", () => openEdit(el.dataset.id));
+  });
+
+  list.querySelectorAll("[data-action='delete']").forEach(btn => {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteOne(btn.dataset.id);
+    });
   });
 }
 function recordNow() {
@@ -155,6 +182,7 @@ function recordNow() {
   currentMonth = new Date();
   currentMonth.setDate(1);
   render();
+  showToast("記録しました");
 }
 function openEdit(id) {
   editingId = id;
@@ -177,14 +205,22 @@ function saveEdit() {
   currentMonth.setDate(1);
   $("editDialog").close();
   render();
+  showToast("保存しました");
+}
+function deleteOne(id, ask=true) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  const label = `${dateLabel(r.time)} ${timeLabel(r.time)}`;
+  if (ask && !confirm(`${label} の記録を削除しますか？`)) return;
+  records = records.filter(x => x.id !== id);
+  save();
+  if ($("editDialog").open) $("editDialog").close();
+  render();
+  showToast("削除しました");
 }
 function deleteEdit() {
   if (!editingId) return;
-  if (!confirm("この記録を削除しますか？")) return;
-  records = records.filter(x => x.id !== editingId);
-  save();
-  $("editDialog").close();
-  render();
+  deleteOne(editingId, true);
 }
 function clearMonth() {
   const count = records.filter(r => sameMonth(r.time, currentMonth)).length;
@@ -193,6 +229,7 @@ function clearMonth() {
   records = records.filter(r => !sameMonth(r.time, currentMonth));
   save();
   render();
+  showToast("今月分を削除しました");
 }
 function monthText() {
   const monthRecords = records
