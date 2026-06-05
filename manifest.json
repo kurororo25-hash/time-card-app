@@ -1,0 +1,15 @@
+{
+  "name": "退勤記録",
+  "short_name": "退勤記録",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f2",
+  "theme_color": "#222222",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
