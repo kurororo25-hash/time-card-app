@@ -29,7 +29,7 @@ function ruleFor(dateStr) {
   const day = dateFromParts(dateStr).getDay();
   if (day === 1) return { start: '06:30', regularEnd: '14:00', baseHours: 7.5, label: '月曜ルール' };
   if (day === 6) return { start: '06:30', regularEnd: '12:30', baseHours: 6.0, label: '土曜ルール' };
-  return { start: null, regularEnd: '14:00', baseHours: 8.5, label: '通常ルール' };
+  return { start: null, regularEnd: '14:00', baseHours: 8.5, label: '火〜金ルール' };
 }
 
 function roundedExtraHours(timeStr, regularEnd) {
@@ -109,7 +109,7 @@ function render() {
     btn.type = 'button'; btn.className = 'record';
     btn.innerHTML = `
       <div class="record-top"><span class="record-date">${displayDate(r.date)}</span><span class="record-time">${r.time}</span></div>
-      <div class="record-bottom"><span>実働 ${formatHours(c.workHours)}時間</span><span>残業 ${formatHours(c.overtime)}時間</span><span>${c.label}</span></div>`;
+      <div class="record-bottom"><span>残業 ${formatHours(c.overtime)}時間</span><span>実働 ${formatHours(c.workHours)}時間</span><span>${c.label}</span></div>`;
     btn.addEventListener('click', () => openEdit(r.id));
     recordList.appendChild(btn);
   }
@@ -132,7 +132,7 @@ function updateEditPreview() {
   $('editWeekday').textContent = `${weekdayOf(date)}曜日`;
   if (!time) { $('editCalculation').textContent = ''; return; }
   const c = calculate(date,time);
-  $('editCalculation').innerHTML = `${c.label}<br>定時：${c.regularEnd} ／ 実働：<b>${formatHours(c.workHours)}時間</b> ／ 残業：<b>${formatHours(c.overtime)}時間</b>`;
+  $('editCalculation').innerHTML = `残業：<b>${formatHours(c.overtime)}時間</b><br>実働：<b>${formatHours(c.workHours)}時間</b><br>${c.label}<br>定時：${c.regularEnd}`;
 }
 
 $('clockOutBtn').addEventListener('click', addNow);
